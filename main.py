@@ -1,9 +1,8 @@
 import os
-from fastapi import FastAPI, HTTPException
+from fastapi import FastAPI, HTTPException, Header
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel
 from typing import List, Optional
-from bson import ObjectId
 
 from database import db, create_document, get_documents
 from schemas import Member
@@ -17,6 +16,8 @@ app.add_middleware(
     allow_methods=["*"],
     allow_headers=["*"],
 )
+
+ADMIN_TOKEN = os.getenv("ADMIN_TOKEN", "changeme")
 
 @app.get("/")
 def read_root():
@@ -81,7 +82,20 @@ def create_member(member: CreateMember):
 def list_members(limit: int = 50):
     try:
         docs = get_documents("member", {}, limit)
-        # convert ObjectId
+        for d in docs:
+            d["id"] = str(d.get("_id"))
+            d.pop("_id", None)
+        return {"items": docs}
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+# Admin-protected listing
+@app.get("/api/admin/members")
+def admin_list_members(limit: int = 100, x_admin_token: Optional[str] = Header(default=None)):
+    if not x_admin_token or x_admin_token != ADMIN_TOKEN:
+        raise HTTPException(status_code=401, detail="Unauthorized")
+    try:
+        docs = get_documents("member", {}, limit)
         for d in docs:
             d["id"] = str(d.get("_id"))
             d.pop("_id", None)
